@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>ChatRSA</title>
+        <meta name="viewport" content="width=device-width,minimum-scale=1,initial-scale=1">
+        <script src="https://cdn.socket.io/4.7.5/socket.io.min.js" integrity="sha384-2huaZvOR9iDzHqslqwpR87isEmrfxqyWOF7hr7BY6KG0+hVKLoEXMPUJw3ynWuhO" crossorigin="anonymous"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.0.0/crypto-js.min.js"></script>
+        <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+        <link rel="stylesheet" href="/static/style">
+    </head>
+    <body>
+        <div class="screen menu">
+            <div class="modal center shadow flex-column gap-10">
+                <p>Chatea sin peligro de hackers. Colegio Buen Pastor - Puesto 110</p>
+                <button id="joinBtn" class="black width-100 flex-1">Join Chat</button>
+                <button id="startBtn" class="black width-100 flex-1">Start Chat</button>
+            </div>
+        </div>
+        <div class="screen encrypting hidden">
+            <div class="modal center shadow flex-column gap-10">
+                <p id = "encryptionStatus"></p>
+            </div>
+        </div>
+        <div class="screen inputRoomID hidden">
+            <form id="roomIDForm" class="modal center shadow flex-column gap-10">
+                <input type="text" id="usernameInputRoomID" class="input" autocomplete="off" autofocus placeholder="Input username" />
+                <input type="text" id="roomIDInput" class="input" autocomplete="off" autofocus placeholder="Input roomID" />
+                <button id="startBtn" class="black width-100 flex-1">Join</button>
+            </form>
+        </div>
+        <div class="screen usernameForm hidden">
+            <form id="usernameForm" class="modal center shadow flex-column gap-10">
+                <input type="text" id="usernameInput" class="input" autocomplete="off" autofocus placeholder="Input username" />
+                <button id="startBtn" class="black width-100 flex-1">Join</button>
+            </form>
+        </div>
+        <div class="screen chat hidden">
+            <div class="header">
+                <button id="backButton"><</button>
+                <div class="roomID"></div>
+            </div>
+            <ul class="messages"></ul>
+            <form id="messageForm" class="sendMessage">
+                <input type="text" id="messageInput" class="input" autocomplete="off" autofocus placeholder="Input your message" />
+                <!--<button>Send</button>-->
+            </form>
+        </div>
+        <script>
+            const messages = document.querySelector(".messages");
+            var username;
+            var socket;
+            var privateKey;
+            var keyCrypto;
+            var roomID;
+            var iv; //crypto.getRandomValues(new Uint8Array(16));
+
+            const symmetricAlgorithm = 'AES-CBC'
+
+            const rsaAlgorithm = {
+                name: "RSA-OAEP",
+                modulusLength: 4096,
+                publicExponent: new Uint8Array([1, 0, 1]),
+                hash: "SHA-256",
+            }
+
+            const sleep = (delay) => new Promise((resolve) => setTimeout(resolve, delay))
+
+            const hexToUint8Array = (hexString) => {
+                return new Uint8Array(hexString.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+            };
+
+            function addMessage(message, system=false) {
+                const li = document.createElement("li");
+                li.innerHTML = message;
+                if (system) {
+                    li.classList.add('system')
+    
+                }
+                messages.appendChild(li);
+                window.scrollTo(0, document.body.scrollHeight);
+            }
+
+            async function generateKeys () {
+                const keyPair = await window.crypto.subtle.generateKey(
+                    rsaAlgorithm,
+                    true,
+                    ["encrypt", "decrypt"]
+                )
+                
+                return keyPair
+            }
+
+            async function convertToJwk (key) {
+                return await window.crypto.subtle.exportKey("jwk", key)
+            }
+
+            function ab2str(buf) {
+                return String.fromCharCode.apply(null, new Uint16Array(buf));
+            }
+
+            function str2ab(str) {
+                var buf = new ArrayBuffer(str.length*2); // 2 bytes for each char
+                var bufView = new Uint16Array(buf);
+                for (var i=0, strLen=str.length; i<strLen; i++) {
+                    bufView[i] = str.charCodeAt(i);
+                }
+                return buf;
+            }
+
+            const encryptMessage = async (message, importedKey, iv) => {
+                try {
+                    // Convert message to Uint8Array
+                    const encodedMessage = new TextEncoder().encode(message);
+
+                    // Encrypt the message
+                    const encryptedData = await window.crypto.subtle.encrypt(
+                        { 
+                            name: symmetricAlgorithm, 
+                            iv 
+                        },
+                        importedKey,
+                        encodedMessage
+                    );
+
+                    return encryptedData;
+                } catch (error) {
+                    console.error('Encryption error:', error);
+                }
+            };
+
+            const decryptMessage = async (encryptedData, importedKey, iv) => {
+                try {
+                    // Decrypt the message
+                    const decryptedData = await window.crypto.subtle.decrypt(
+                        { name: symmetricAlgorithm, iv },
+                        importedKey,
+                        encryptedData
+                    );
+
+                    // Convert decrypted data to string
+                    const decryptedMessage = new TextDecoder().decode(decryptedData);
+
+                    return decryptedMessage;
+                } catch (error) {
+                    console.error('Decryption error:', error);
+                }
+            };
+            
+            const importSymmetricKey = async (key) => {
+                try {
+                    return await window.crypto.subtle.importKey(
+                    'raw',
+                    key,
+                    { name: 'AES-CBC' },
+                    false,
+                    ['encrypt', 'decrypt'] // Only specify 'decrypt' usage
+                    );
+                } catch (error) {
+                    console.error('Key import error:', error);
+                }
+            };
+
+            async function connectToRoom (roomID, username) {
+                $('#encryptionStatus').text("Generating RSA keys...")
+                const keyPair = await generateKeys()
+                
+                $('#encryptionStatus').text("Preparing keys for sending...")
+                const publicKey = await convertToJwk(keyPair.publicKey)
+                
+                privateKey = keyPair.privateKey
+                
+                $('#encryptionStatus').text("Connecting to WebSocket...")
+                socket = io('', {
+                    query: {
+                        roomID: roomID,
+                        username: username,
+                    }
+                });
+
+                socket.on("invalid_username", function(data) {
+                    alert(data)
+                    window.location.reload()
+                });
+                
+                socket.on("iv", function(data) {
+                    $('#encryptionStatus').text("Recieved initial vector")
+                    iv = hexToUint8Array(data.iv)
+                });
+                
+                socket.on("invalid_roomid", function(data) {
+                    console.log("Hey")
+                    alert("Invalid Room ID")
+                    window.location.reload()
+                })
+                
+                $('#encryptionStatus').text("Sending public key...")
+                socket.emit("public_key", {publicKey})
+                $('#encryptionStatus').text("Public key sent")
+                
+                socket.on("symmetric_key", async function(data) {
+                    //const decodedSymmetricKey = new Uint8Array(atob(data).split('').map(char => char.charCodeAt(0)));
+                    
+                    $('#encryptionStatus').text("Recieving encrypted symmetric key...")
+                    $('#encryptionStatus').text("Decrypting symmetric key...")
+                    const decryptedData = await window.crypto.subtle.decrypt(
+                        {
+                            name: rsaAlgorithm.name
+                        },
+                        privateKey,
+                        data.symmetricKey
+                    );
+                    $('#encryptionStatus').text("Symmetric key decrypted")
+
+                    const hexKey = new TextDecoder().decode(decryptedData);
+                    
+                    symmetricKey = hexToUint8Array(hexKey);
+
+                    $('#encryptionStatus').text("Importing symmetric key for usage...")
+                    keyCrypto = await importSymmetricKey(symmetricKey)
+                    $('#encryptionStatus').text("Key imported and ready to send messages")
+                    
+                    $('#encryptionStatus').text("Joining room...")
+                    $('.roomID').text(`Room ID: ${roomID}`)
+                    addMessage("You have joined the chat as '" + username  + "'.", true);
+                    socket.emit("user_join");
+
+                    $(".screen.encrypting").addClass("hidden")
+                    $(".screen.chat").removeClass("hidden")
+                });
+                
+                socket.on("chat_message", async function(data) {
+
+                    const encryptedData = data.message
+
+                    const decryptedMessage = await decryptMessage(encryptedData, keyCrypto, iv)
+
+                    //const decryptedMessage = new TextDecoder().decode(decryptedData);
+
+                    addMessage(data.username + ": " + decryptedMessage);
+                });
+        
+                socket.on("user_join", function(data) {
+                    addMessage(data + " just joined the chat!", true);
+                });
+                
+                socket.on("user_leave", function(data) {
+                    addMessage(data + " has left the chat.", true);
+                });
+                
+
+
+            }
+
+            $('#joinBtn').click(() => {
+                $('.screen.menu').addClass("hidden")
+                $('.screen.inputRoomID').removeClass("hidden")
+            })
+
+            $('#startBtn').click(async () => {
+                $('.screen.menu').addClass("hidden")
+                $('.screen.encrypting').removeClass("hidden")
+
+                $('#encryptionStatus').text('Requesting chat creation...')
+                const res = await fetch('/api/createChat', {
+                    method: "POST",
+                })
+                
+                const json = await res.json()
+                
+                roomID = json.roomID
+                
+                $('#encryptionStatus').text(`Chat created with ID: ${roomID}`)
+                $('.screen.encrypting').addClass("hidden")
+                $('.screen.usernameForm').removeClass("hidden")
+            })
+
+            $("#roomIDForm").submit(async (e) => {
+                e.preventDefault()
+                $('.screen.inputRoomID').addClass("hidden")
+                $('.screen.encrypting').removeClass("hidden")
+
+                roomID = $("#roomIDInput").val()
+                username = $('#usernameInputRoomID').val()
+
+                if (!username.trim()) {
+                    alert("Invalid username")
+                    window.location.reload()
+                }
+
+                await connectToRoom(roomID, username)
+                
+            })
+
+            $("#usernameForm").submit(async (e) => {
+                e.preventDefault()
+
+                $('.screen.usernameForm').addClass("hidden")
+                $('.screen.encrypting').removeClass("hidden")
+
+                username = $('#usernameInput').val()
+
+                if (!username.trim()) {
+                    alert("Invalid username")
+                    window.location.reload()
+                }
+
+                await connectToRoom(roomID, username)
+            })
+
+
+            
+            $('#messageForm').submit(async (e) => {
+                event.preventDefault();
+
+                const message = $("#messageInput").val()
+
+                if (!message.trim()) {
+                    return
+                }
+
+                const encryptedData = await encryptMessage(message, keyCrypto, iv)
+
+                socket.emit("chat_message", encryptedData);
+
+                addMessage(username + ": " + message);
+
+                $("#messageInput").val('')
+
+            })
+
+            $('#backButton').click(() => {
+                window.location.reload()
+            })
+
+            const params = new URLSearchParams(window.location.search);
+    
+            //const roomID = params.get('roomID') ? params.get('roomID') : prompt("Please enter your room ID: ", "")
+            //const username = prompt("Please enter a nickname: ", "");
+        </script>
+    </body>
+</html>

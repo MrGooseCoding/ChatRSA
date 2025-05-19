@@ -1,0 +1,137 @@
+@import url('https://fonts.googleapis.com/css2?family=Nunito:ital,wght@0,200..1000;1,200..1000&family=Poppins:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&display=swap');
+
+* {
+    font-family: "Poppins", sans-serif;
+    font-weight: 600;
+    font-size: large;
+    font-style: normal;
+}
+
+body {
+    margin: 0;
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.screen {
+}
+
+.screen.hidden {
+    display: none;
+}
+
+form.sendMessage {
+    display: flex;
+    width: 100vw;
+    box-sizing: border-box;
+    padding: 10px;
+    background-color: white;
+    border-top: 1px solid rgba(149, 157, 165, 0.302);
+    gap: 10px;
+
+}
+
+form {
+    
+}
+
+input {
+    flex: 1;
+    border: 0;
+    padding: 10px;
+    outline: 0;
+    border-radius: 10px;
+    background: #efefef;
+    width: 80vw;
+}
+
+button {
+    border: none;
+    cursor: pointer;
+    text-transform: uppercase;
+    background-color: white;
+    
+}
+
+button.black {
+    background-color: rgb(16, 16, 16);
+    border-radius: 10px;
+    padding: 10px;
+    color: white;
+
+}
+
+/*form button:hover {
+    background-color: #166d01;
+}*/
+
+.header {
+    border-bottom: 1px solid rgba(149, 157, 165, 0.302);
+    display: flex;
+    padding: 15px;
+    background-color: white;
+
+}
+
+.roomName {
+
+}
+
+.roomID {
+    margin-left: auto;
+}
+
+.messages {
+    flex: 1;
+    margin: 0;
+    padding: 0;
+    overflow-y: auto;
+}
+
+.messages li {
+    padding: 0.5rem;
+}
+
+.messages li.system {
+    margin-left: auto;
+    background: #eee;
+}
+
+.center {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+}
+
+.width-100 {
+    width: 100%;
+}
+
+.flex-1 {
+    flex: 1;
+
+}
+
+.flex-column {
+    display: flex;
+    flex-direction: column;
+}
+
+.gap-10 {
+    gap: 10px;
+}
+
+.shadow {
+    box-shadow: rgba(149, 157, 165, 0.2) 0px 8px 24px;
+}
+
+.modal {
+    
+    min-width: 300px;
+    border: 1px solid rgba(149, 157, 165, 0.302);
+    border-radius: 15px;
+    padding: 20px;
+}
